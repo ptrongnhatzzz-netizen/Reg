@@ -24,16 +24,22 @@ jobs:
     - name: Thiết lập Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Cài đặt và cấu hình Gradle v8.5 độc lập
-      uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-version: 8.5
-
     - name: Khởi tạo cấu trúc thư mục dự án Android đầy đủ
       run: |
         mkdir -p app/src/main/java/com/antilag/service
         mkdir -p app/src/main/jniLibs/arm64-v8a
         mkdir -p app/src/main/res/values
+        mkdir -p gradle/wrapper
+
+    - name: Cấu hình tạo bộ chạy độc lập Gradle Wrapper 8.5
+      run: |
+        cat << 'EOF' > gradle/wrapper/gradle-wrapper.properties
+        distributionBase=GRADLE_USER_HOME
+        distributionPath=wrapper/dists
+        distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
+        zipStoreBase=GRADLE_USER_HOME
+        zipStorePath=wrapper/dists
+        EOF
 
     - name: Sao chép thư viện libkk.so vào cấu trúc JNI
       run: |
@@ -69,7 +75,7 @@ jobs:
       run: |
         cat << 'EOF' > build.gradle
         plugins {
-            id 'com.android.application' version '8.1.0' apply false
+            id 'com.android.application' version '8.2.2' apply false
         }
         EOF
 
@@ -164,4 +170,110 @@ jobs:
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
                 Intent intent = new Intent(this, AntiLagService.class);
-                if (Build.VERSION.SDK_INT >= Bu
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent);
+                } else {
+                    startService(intent);
+                }
+                finish();
+            }
+        }
+        EOF
+
+    - name: Tạo file dịch vụ Java AntiLagService.java
+      run: |
+        cat << 'EOF' > app/src/main/java/com/antilag/service/AntiLagService.java
+        package com.antilag.service;
+
+        import android.app.Notification;
+        import android.app.NotificationChannel;
+        import android.app.NotificationManager;
+        import android.app.Service;
+        import android.content.Intent;
+        import android.os.Build;
+        import android.os.IBinder;
+
+        public class AntiLagService extends Service {
+            private static final String CHANNEL_ID = "AntiLagChannel";
+            private boolean isRunning = true;
+
+            public native void kichHoatChongLag();
+
+            @Override
+            public void onCreate() {
+                super.onCreate();
+                taoNotificationChannel();
+                Notification notification = null;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    notification = new Notification.Builder(this, CHANNEL_ID)
+                            .setContentTitle("Anti Lag Chạy Ngầm")
+                            .setContentText("Hệ thống tối ưu hóa game đang hoạt động...")
+                            .build();
+                }
+                startForeground(1, notification);
+
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        while (isRunning) {
+                            try {
+                                System.loadLibrary("kk");
+                                kichHoatChongLag();
+                            } catch (UnsatisfiedLinkError e) {
+                                e.printStackTrace();
+                            }
+                            try {
+                                Thread.sleep(5000);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+                }).start();
+            }
+
+            private void taoNotificationChannel() {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    NotificationChannel channel = new NotificationChannel(
+                            CHANNEL_ID,
+                            "Anti Lag Foreground Service",
+                            NotificationManager.IMPORTANCE_LOW
+                    );
+                    NotificationManager manager = getSystemService(NotificationManager.class);
+                    if (manager != null) {
+                        manager.createNotificationChannel(channel);
+                    }
+                }
+            }
+
+            @Override
+            public int onStartCommand(Intent intent, int flags, int startId) {
+                return START_STICKY;
+            }
+
+            @Override
+            public IBinder onBind(Intent intent) {
+                return null;
+            }
+
+            @Override
+            public void onDestroy() {
+                isRunning = false;
+                super.onDestroy();
+            }
+        }
+        EOF
+
+    - name: Tải tệp thực thi cục bộ gradlew
+      run: |
+        wget https://githubusercontent.com -O gradlew
+        chmod +x gradlew
+
+    - name: Tiến hành Biên dịch hệ thống bằng Gradle Wrapper cục bộ
+      run: ./gradlew :app:assembleDebug
+
+    - name: Xuất bản và Lưu trữ thành phẩm File APK xuất đầu ra
+      uses: actions/upload-artifact@v4
+      with:
+        name: AntiLag-Debug-APK
+        path: app/build/outputs/apk/debug/app-debug.apk
