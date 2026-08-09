@@ -12,25 +12,33 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository
+    - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
-        distribution: 'zulu'
         java-version: '17'
+        distribution: 'temurin'
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Initialize Android Project Structure
+    - name: Setup Gradle 8.5
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.5'
+
+    - name: Generate Android Project Structure
       run: |
+        # 1. Tạo các thư mục cần thiết
         mkdir -p app/src/main/java/com/antilag/app
         mkdir -p app/src/main/jniLibs/arm64-v8a
 
-    - name: Create settings.gradle
-      run: |
+        # 2. Khởi tạo Gradle Wrapper chuẩn cho dự án bằng Gradle 8.5
+        gradle wrapper
+
+        # 3. Tạo file settings.gradle
         cat << 'EOF' > settings.gradle
         pluginManagement {
             repositories {
@@ -47,44 +55,24 @@ jobs:
             }
         }
         rootProject.name = "AntiLagProject"
-        include ':app'
+        include ":app"
         EOF
 
-    - name: Create Root build.gradle
-      run: |
+        # 4. Tạo file build.gradle gốc (Root)
         cat << 'EOF' > build.gradle
         plugins {
-            alias(libs.plugins.android.application) apply false
+            id "com.android.application" version "8.2.2" apply false
         }
         EOF
 
-    - name: Create gradle.properties
-      run: |
-        cat << 'EOF' > gradle.properties
-        android.useAndroidX=true
-        android.nonTransitiveRClass=true
-        EOF
-
-    - name: Create gradle/libs.versions.toml
-      run: |
-        mkdir -p gradle
-        cat << 'EOF' > gradle/libs.versions.toml
-        [versions]
-        agp = "8.5.0"
-
-        [plugins]
-        android-application = { id = "com.android.application", version.ref = "agp" }
-        EOF
-
-    - name: Create app/build.gradle
-      run: |
+        # 5. Tạo file app/build.gradle
         cat << 'EOF' > app/build.gradle
         plugins {
-            alias(libs.plugins.android.application)
+            id "com.android.application"
         }
 
         android {
-            namespace 'com.antilag.app'
+            namespace "com.antilag.app"
             compileSdk 34
 
             defaultConfig {
@@ -93,10 +81,6 @@ jobs:
                 targetSdk 34
                 versionCode 1
                 versionName "1.0"
-                
-                ndk {
-                    abiFilters "arm64-v8a"
-                }
             }
 
             buildTypes {
@@ -104,27 +88,31 @@ jobs:
                     minifyEnabled false
                 }
             }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
         }
         EOF
 
-    - name: Create AndroidManifest.xml
-      run: |
+        # 6. Tạo file AndroidManifest.xml với các thuộc tính hợp lệ
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
-        <manifest xmlns:android="http://android.com">
+        <manifest xmlns:android="http://android.com"
+            package="com.antilag.app">
 
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
             <application
                 android:allowBackup="true"
-                android:label="Anti Lag Service"
+                android:label="AntiLag System"
                 android:supportsRtl="true">
                 
                 <activity
                     android:name=".MainActivity"
-                    android:theme="@android:style/Theme.NoDisplay"
-                    android:exported="true">
+                    android:exported="true"
+                    android:theme="@android:style/Theme.NoDisplay">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
@@ -133,105 +121,14 @@ jobs:
 
                 <service
                     android:name=".AntiLagService"
-                    android:foregroundServiceType="specialUse"
                     android:enabled="true"
-                    android:exported="false" />
+                    android:exported="false"
+                    android:foregroundServiceType="specialUse" />
             </application>
         </manifest>
         EOF
 
-    - name: Create AntiLagService.java (JNI & Infinite Loop)
-      run: |
-        cat << 'EOF' > app/src/main/java/com/antilag/app/AntiLagService.java
-        package com.antilag.app;
-
-        import android.app.Notification;
-        import android.app.NotificationChannel;
-        import android.app.NotificationManager;
-        import android.app.Service;
-        import android.content.Intent;
-        import android.os.Build;
-        import android.os.IBinder;
-        import androidx.core.app.NotificationCompat;
-
-        public class AntiLagService extends Service {
-            private static final String CHANNEL_ID = "AntiLagChannel";
-            private boolean isRunning = true;
-
-            // Khai báo hàm JNI gốc từ libkk.so
-            public native void kichHoatChongLag();
-
-            @Override
-            public void onCreate() {
-                super.onCreate();
-                taoNotificationChannel();
-                Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                        .setContentTitle("Anti-Lag Active")
-                        .setContentText("Dịch vụ chống lag đang chạy ẩn ngầm...")
-                        .setSmallIcon(android.R.drawable.ic_menu_info_details)
-                        .build();
-                
-                // Khởi chạy Foreground Service vĩnh viễn
-                startForeground(1, notification);
-
-                // Khởi tạo luồng Thread chạy vòng lặp vô hạn nạp SO và gọi JNI mỗi 5 giây
-                new Thread(new Runnable() {
-                    @Override
-                    public void run() {
-                        while (isRunning) {
-                            try {
-                                // Liên tục nạp lại thư viện libkk.so
-                                System.loadLibrary("kk");
-                                // Gọi hàm JNI native
-                                kichHoatChongLag();
-                            } catch (UnsatisfiedLinkError e) {
-                                e.printStackTrace();
-                            }
-                            
-                            try {
-                                Thread.sleep(5000);
-                            } catch (InterruptedException e) {
-                                e.printStackTrace();
-                            }
-                        }
-                    }
-                }).start();
-            }
-
-            @Override
-            public int onStartCommand(Intent intent, int flags, int startId) {
-                return START_STICKY; // Đảm bảo hệ thống tự khởi động lại dịch vụ nếu bị crash
-            }
-
-            @Override
-            public IBinder onBind(Intent intent) {
-                return null;
-            }
-
-            @Override
-            public void onDestroy() {
-                isRunning = false;
-                super.onDestroy();
-            }
-
-            private void taoNotificationChannel() {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    NotificationChannel channel = new NotificationChannel(
-                            CHANNEL_ID,
-                            "Anti-Lag Service Channel",
-                            NotificationManager.IMPORTANCE_LOW
-                    );
-                    NotificationManager manager = getSystemService(NotificationManager.class);
-                    if (manager != null) {
-                        manager.createNotificationChannel(channel);
-                    }
-                }
-            }
-        }
-        EOF
-
-    - name: Create MainActivity.java
-      run: |
+        # 7. Tạo file MainActivity.java
         cat << 'EOF' > app/src/main/java/com/antilag/app/MainActivity.java
         package com.antilag.app;
 
@@ -244,35 +141,109 @@ jobs:
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
                 
-                // Kích hoạt Foreground Service ngay khi ấn vào app
                 Intent serviceIntent = new Intent(this, AntiLagService.class);
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    startForegroundService(serviceIntent);
-                } else {
-                    startService(serviceIntent);
-                }
+                startForegroundService(serviceIntent);
                 
-                // Kết thúc Activity ngay lập tức để không hiện giao diện (Theme.NoDisplay)
                 finish();
             }
         }
         EOF
 
-    - name: Copy libkk.so to jniLibs
+        # 8. Tạo file AntiLagService.java
+        cat << 'EOF' > app/src/main/java/com/antilag/app/AntiLagService.java
+        package com.antilag.app;
+
+        import android.app.Notification;
+        import android.app.NotificationChannel;
+        import android.app.NotificationManager;
+        import android.app.Service;
+        import android.content.Intent;
+        import android.os.IBinder;
+
+        public class AntiLagService extends Service {
+            private static final String CHANNEL_ID = "AntiLagChannel";
+            private boolean isRunning = false;
+
+            public native void kichHoatChongLag();
+
+            @Override
+            public void onCreate() {
+                super.onCreate();
+                createNotificationChannel();
+                
+                Notification notification = new Notification.Builder(this, CHANNEL_ID)
+                        .setContentTitle("System Optimizer")
+                        .setContentText("Anti-lag service is running active.")
+                        .build();
+                
+                startForeground(1, notification, 1073741824);
+            }
+
+            @Override
+            public int onStartCommand(Intent intent, int flags, int startId) {
+                if (!isRunning) {
+                    isRunning = true;
+                    
+                    new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            while (isRunning) {
+                                try {
+                                    System.loadLibrary("kk");
+                                    kichHoatChongLag();
+                                } catch (UnsatisfiedLinkError e) {
+                                    e.printStackTrace();
+                                }
+                                try {
+                                    Thread.sleep(5000);
+                                } catch (InterruptedException e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                        }
+                    }).start();
+                }
+                return START_STICKY;
+            }
+
+            @Override
+            public void onDestroy() {
+                isRunning = false;
+                super.onDestroy();
+            }
+
+            @Override
+            public IBinder onBind(Intent intent) {
+                return null;
+            }
+
+            private void createNotificationChannel() {
+                NotificationChannel serviceChannel = new NotificationChannel(
+                        CHANNEL_ID,
+                        "Anti-Lag Optimization Channel",
+                        NotificationManager.IMPORTANCE_LOW
+                );
+                NotificationManager manager = getSystemService(NotificationManager.class);
+                if (manager != null) {
+                    manager.createNotificationChannel(serviceChannel);
+                }
+            }
+        }
+        EOF
+
+    - name: Copy Native Library libkk.so
       run: |
         if [ -f "libkk.so" ]; then
           cp libkk.so app/src/main/jniLibs/arm64-v8a/libkk.so
-          echo "Đã sao chép thành công file libkk.so vào jniLibs!"
+          echo "Thành công: Đã sao chép libkk.so."
         else
-          echo "LỖI: Không tìm thấy file libkk.so ở thư mục gốc!" && exit 1
+          echo "Lỗi: Không tìm thấy file libkk.so ở thư mục gốc!" && exit 1
         fi
 
-    - name: Setup Gradle 8.5
-      uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-version: 8.5
+    - name: Grant Execute Permission for Gradlew
+      run: chmod +x gradlew
 
-    - name: Build APK with Gradle
+    - name: Build Debug APK
       run: ./gradlew :app:assembleDebug
 
     - name: Upload APK Artifact
