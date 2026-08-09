@@ -1,5 +1,7 @@
-name: Build Anti-Lag Android APK
-
+      - name: Generate Android Project Structure
+        working-directory: ./android   # <-- THÊM ĐÚNG VÀO ĐÂY (Lưu ý lùi vào 8 khoảng trắng thẳng hàng)
+        run: |
+          # Các câu lệnh gốc của bạn đang có ở đây, hãy giữ nguyên chúng
 on:
   push:
     branches: [ "main", "master" ]
