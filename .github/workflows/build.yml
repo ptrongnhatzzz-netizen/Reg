@@ -56,3 +56,38 @@ jobs:
           rootProject.name = "Reg"
           include ':app'
           EOF
+
+          # 4. Tạo file build.gradle tối giản cho thư mục gốc
+          cat << 'EOF' > build.gradle
+          plugins {
+              id 'com.android.application' version '8.2.2' apply false
+              id 'com.android.library' version '8.2.2' apply false
+          }
+          EOF
+
+          # 5. Tạo file build.gradle cho thư mục con app
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.antilag.app'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.antilag.app"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+          }
+          EOF
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
