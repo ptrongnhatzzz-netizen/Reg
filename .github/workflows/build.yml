@@ -30,14 +30,11 @@ jobs:
       - name: Generate Android Project Structure
         working-directory: .
         run: |
-          # 1. Tạo các thư mục cấu trúc cần thiết
+          # 1. Tạo các thư mục cấu trúc cần thiết trước
           mkdir -p app/src/main/java/com/antilag/app
           mkdir -p app/src/main/jniLibs/arm64-v8a
 
-          # 2. Khởi tạo cấu trúc Gradle Wrapper 
-          gradle wrapper
-
-          # 3. Tạo file settings.gradle hoàn chỉnh
+          # 2. Tạo file settings.gradle hoàn chỉnh trước
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -57,7 +54,7 @@ jobs:
           include ':app'
           EOF
 
-          # 4. Tạo file build.gradle tối giản cho thư mục gốc
+          # 3. Tạo file build.gradle tối giản cho thư mục gốc
           cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.2.2' apply false
@@ -65,7 +62,7 @@ jobs:
           }
           EOF
 
-          # 5. Tạo file build.gradle cho thư mục con app
+          # 4. Tạo file build.gradle cho thư mục con app
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -82,6 +79,9 @@ jobs:
               }
           }
           EOF
+
+          # 5. Khởi tạo cấu trúc Gradle Wrapper sau khi đã có file build
+          gradle wrapper
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug
